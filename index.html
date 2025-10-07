@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генератор Паролей</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Генератор Паролей</h1>
+
+        <form method="post">
+            <div>
+                <label for="length">Длина пароля:</label>
+                <input type="number" id="length" name="length" required min="6" max="32">
+            </div>
+
+            <div>
+                <label>Сложность:</label>
+                <select name="complexity">
+                    <option value="easy">Легкий</option>
+                    <option value="medium">Средний</option>
+                    <option value="hard">Сложный</option>
+                </select>
+            </div>
+
+            <button type="submit">Сгенерировать</button>
+
+            {% if password %}
+                <h2>Сгенерированный пароль:</h2>
+                <p><strong>{{ password }}</strong></p>
+            {% endif %}
+
+            {% if error %}
+                <p class="error">{{ error }}</p>
+            {% endif %}
+        </form>
+    </div>
+</body>
+</html>
