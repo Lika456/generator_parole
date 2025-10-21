@@ -162,6 +162,16 @@
                 <h3>{{ password }}</h3>
             </div>
         {% endif %}
+        {% if history %}
+    <div class="password-box mt-3">
+        <h5>История ваших паролей:</h5>
+        <ul>
+            {% for item in history %}
+                <li>{{ item }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+        {% endif %}
 
         <a href="{{ url_for('logout') }}" class="logout">🚪 Выйти</a>
     </div>
