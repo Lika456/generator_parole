@@ -3,12 +3,99 @@ import random
 import os
 
 app = Flask(__name__)
-app.secret_key = "secretkey"
+app.secret_key = 'super_secret_key'
 
 PREDEFINED_USERS = {
     "user": "user1",
     "admin": "admin1"
 }
+
+def load_users():
+    users = {}
+    if os.path.exists("users.txt"):
+        with open("users.txt", "r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    username, password = parts[0], parts[1]
+                    history = parts[2].split(",") if len(parts) > 2 else []
+                    users[username] = {"password": password, "history": history}
+    return users
+
+
+def save_users(users):
+    with open("users.txt", "w", encoding="utf-8") as file:
+        for username, data in users.items():
+            line = f"{username}:{data['password']}"
+            if data["history"]:
+                line += ":" + ",".join(data["history"])
+            file.write(line + "\n")
+
+
+def save_user(username, password):
+    with open("users.txt", "a", encoding="utf-8") as file:
+        file.write(f"{username}:{password}\n")
+
+
+def generate_password(length, complexity):
+    alfa = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    beta = "0123456789"
+    zet = 'abcdefghijklmnopqrstuvwxyz'
+    gamma = '!#$%&*+-=?@^_'
+
+    chars = ''
+    if complexity == "hard":
+        chars = alfa + beta + zet + gamma
+    elif complexity == "medium":
+        chars = alfa + beta + zet
+    elif complexity == "easy":
+        chars = beta + zet
+    else:
+        return "Недопустимый уровень сложности."
+
+    return ''.join(random.choices(chars, k=length))
+
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if 'user' not in session:
+        flash("Пожалуйста, выполните вход.", "error")
+        return redirect(url_for("login"))
+
+    username = session['user']
+    users = {**PREDEFINED_USERS, **load_users()}
+    password = None
+    error = None
+
+    user_data = load_users().get(username, {"history": []})
+    history = user_data.get("history", [])
+
+    if request.method == 'POST':
+        try:
+            pwd_length = int(request.form['length'])
+        except ValueError:
+            error = "Длина должна быть числом."
+            return render_template('index.html', error=error, password=None, history=history, username=username)
+
+        if pwd_length < 8:
+            error = "Пароль не должен быть меньше 8 символов."
+            return render_template('index.html', error=error, password=None, history=history, username=username)
+
+        complexity = request.form['complexity'].lower()
+        password = generate_password(pwd_length, complexity)
+
+        users_full = load_users()
+        if username not in users_full:
+            users_full[username] = {"password": PREDEFINED_USERS.get(username, ""), "history": []}
+        users_full[username]["history"].append(password)
+        save_users(users_full)
+        history = users_full[username]["history"]
+
+    return render_template('index.html', password=password, error=error, username=username, history=history)
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -16,23 +103,17 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
 
-        users = PREDEFINED_USERS.copy()
+        all_users = load_users()
+        users_simple = {u: d["password"] for u, d in all_users.items()}
+        users_combined = {**PREDEFINED_USERS, **users_simple}
 
-        if os.path.exists("users.txt"):
-            with open("users.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    if ":" in line:
-                        u, p = line.strip().split(":", 1)
-                        users[u] = p
-
-        if username in users and users[username] == password:
-            session["user"] = username
+        if username in users_combined and users_combined[username] == password:
+            session['user'] = username
             flash(f"Добро пожаловать, {username}!", "success")
             return redirect(url_for("index"))
         else:
-            flash("Неверный логин или пароль! Попробуйте зарегистрироваться.", "danger")
+            flash("Неверные данные! Зарегистрируйтесь.", "error")
             return redirect(url_for("register"))
-
     return render_template("login.html")
 
 
@@ -44,29 +125,20 @@ def register():
         confirm = request.form.get("password_confirm", "").strip()
 
         if not username or not password:
-            flash("Поля не должны быть пустыми!", "danger")
+            flash("Все поля обязательны.", "error")
             return redirect(url_for("register"))
 
         if password != confirm:
-            flash("Пароли не совпадают.", "danger")
+            flash("Пароли не совпадают.", "error")
             return redirect(url_for("register"))
 
-        existing_users = PREDEFINED_USERS.copy()
-        if os.path.exists("users.txt"):
-            with open("users.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    if ":" in line:
-                        u, p = line.strip().split(":", 1)
-                        existing_users[u] = p
-
-        if username in existing_users:
-            flash("Такой пользователь уже существует.", "danger")
+        users = load_users()
+        if username in users:
+            flash("Такой пользователь уже существует.", "error")
             return redirect(url_for("login"))
 
-        with open("users.txt", "a", encoding="utf-8") as f:
-            f.write(f"{username}:{password}\n")
-
-        flash("Регистрация успешна! Теперь войдите.", "success")
+        save_user(username, password)
+        flash("Регистрация успешно завершена! Теперь войдите.", "success")
         return redirect(url_for("login"))
 
     return render_template("register.html")
@@ -74,55 +146,14 @@ def register():
 
 @app.route("/logout")
 def logout():
-    session.pop("user", None)
+    session.pop('user', None)
     flash("Вы вышли из системы.", "success")
     return redirect(url_for("login"))
 
-def generate_password(length, complexity):
-    upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    digits = "0123456789"
-    lower = "abcdefghijklmnopqrstuvwxyz"
-    symbols = "!#$%&*+-=?@^_"
 
-    chars = ""
-    if complexity == "hard":
-        chars = upper + lower + digits + symbols
-    elif complexity == "medium":
-        chars = upper + lower + digits
-    elif complexity == "easy":
-        chars = lower + digits
-    else:
-        return "Ошибка: неверный уровень сложности"
-
-    return "".join(random.choice(chars) for _ in range(length))
-
-
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if "user" not in session:
-        return redirect(url_for("login"))
-
-    password = ""
-    error = ""
-
-    if request.method == "POST":
-        try:
-            length = int(request.form.get("length", 0))
-            level = request.form.get("complexity", "easy").lower()
-
-            if length < 8:
-                error = "Пароль должен быть не короче 8 символов."
-            else:
-                password = generate_password(length, level)
-
-        except ValueError:
-            error = "Введите число для длины пароля."
-
-    return render_template("index.html", password=password, error=error, username=session.get("user"))
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     if not os.path.exists("users.txt"):
         with open("users.txt", "w", encoding="utf-8") as f:
             f.write("user:user1\nadmin:admin1\n")
-
+    app.run(debug=True)
     app.run(debug=True)
